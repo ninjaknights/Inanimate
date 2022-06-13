@@ -8,6 +8,7 @@ use pocketmine\entity\Entity;
 use pocketmine\item\ItemFactory;
 use pocketmine\math\Vector3;
 use pocketmine\network\mcpe\convert\LegacySkinAdapter;
+use pocketmine\network\mcpe\convert\SkinAdapterSingleton;
 use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\protocol\AddActorPacket;
 use pocketmine\network\mcpe\protocol\AddPlayerPacket;
@@ -124,9 +125,6 @@ class Inanimate
         "TRIPOD_CAMERA" => EntityIds::TRIPOD_CAMERA
     ];
 
-    /**
-     * @throws JsonException
-     */
     public function summonPlayer(Player $player, string $name): void
     {
         $position = $player->getPosition();
@@ -136,8 +134,9 @@ class Inanimate
         $entry = new PlayerListEntry();
         $entry->uuid = $uuid;
         $entry->actorUniqueId = $id;
-        $legacy = new LegacySkinAdapter();
-        $entry->skinData = $legacy->toSkinData($player->getSkin());
+        $sas = new SkinAdapterSingleton();
+        $skin = $player->getSkin();
+        $entry->skinData = $sas->get()->toSkinData($skin);
         $entry->username = "";
         $entry->xboxUserId = "";
 
@@ -155,7 +154,7 @@ class Inanimate
         $addPlayerPacket->username = "";
         $addPlayerPacket->yaw = $player->getLocation()->yaw;
         $addPlayerPacket->pitch = $player->getLocation()->pitch;
-        $addPlayerPacket->headYaw = $this->correctHeadYaw($player->getLocation()->yaw);
+        $addPlayerPacket->headYaw = $player->getLocation()->yaw;
         $adventurepk = new AdventureSettingsPacket();
         $adventurepk->targetActorUniqueId = $id;
         $addPlayerPacket->adventureSettingsPacket = $adventurepk;
@@ -172,24 +171,6 @@ class Inanimate
         $playerListRemovePacket->type = PlayerListPacket::TYPE_REMOVE;
 
         $player->getServer()->broadcastPackets([$player], [$playerListAddPacket, $addPlayerPacket, $playerListRemovePacket]);
-    }
-
-    public function correctHeadYaw($yaw): int
-    {
-        if( 170 >= $yaw and $yaw >= 50){
-            return 310 + $yaw;
-        }elseif($yaw < 50){
-            return 0;
-        }elseif ($yaw > 170 and $yaw <= 310) {
-            return $yaw + 50;
-        }elseif ($yaw <= 310){
-            return 0;
-        }elseif ($yaw > 420 and $yaw <= 530){
-            return $yaw - 50;
-        }elseif ($yaw > 530 and $yaw <= 640){
-            return $yaw + 50;
-        }
-        return $yaw;
     }
 
     public function summonMob(Player $player, string $type, string $name): void
@@ -218,4 +199,5 @@ class Inanimate
     protected function getAttributes() : array{
         return [ new \pocketmine\network\mcpe\protocol\types\entity\Attribute(Attribute::HEALTH, 0 ,3,3,3)];
     }
+
 }
