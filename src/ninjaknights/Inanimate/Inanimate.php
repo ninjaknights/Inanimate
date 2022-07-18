@@ -2,18 +2,18 @@
 
 namespace ninjaknights\Inanimate;
 
-use JsonException;
 use pocketmine\entity\Attribute;
 use pocketmine\entity\Entity;
+use pocketmine\entity\Location;
+use pocketmine\entity\Skin;
 use pocketmine\item\ItemFactory;
 use pocketmine\math\Vector3;
-use pocketmine\network\mcpe\convert\LegacySkinAdapter;
 use pocketmine\network\mcpe\convert\SkinAdapterSingleton;
 use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\protocol\AddActorPacket;
 use pocketmine\network\mcpe\protocol\AddPlayerPacket;
-use pocketmine\network\mcpe\protocol\AdventureSettingsPacket;
 use pocketmine\network\mcpe\protocol\PlayerListPacket;
+use pocketmine\network\mcpe\protocol\types\command\CommandPermissions;
 use pocketmine\network\mcpe\protocol\types\entity\ByteMetadataProperty;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
 use pocketmine\network\mcpe\protocol\types\entity\EntityMetadataFlags;
@@ -24,7 +24,10 @@ use pocketmine\network\mcpe\protocol\types\entity\LongMetadataProperty;
 use pocketmine\network\mcpe\protocol\types\entity\StringMetadataProperty;
 use pocketmine\network\mcpe\protocol\types\inventory\ItemStackWrapper;
 use pocketmine\network\mcpe\protocol\types\PlayerListEntry;
+use pocketmine\network\mcpe\protocol\types\PlayerPermissions;
+use pocketmine\network\mcpe\protocol\UpdateAbilitiesPacket;
 use pocketmine\player\Player;
+use pocketmine\Server;
 use Ramsey\Uuid\Uuid;
 
 class Inanimate
@@ -32,6 +35,7 @@ class Inanimate
 
     public const type = [
         "PLAYER" => "Human",
+        "NPC" => EntityIds::NPC,
         "WITHER_SKELETON" => EntityIds::WITHER_SKELETON,
         "HUSK" => EntityIds::HUSK,
         "STRAY" => EntityIds::STRAY,
@@ -125,9 +129,15 @@ class Inanimate
         "TRIPOD_CAMERA" => EntityIds::TRIPOD_CAMERA
     ];
 
-    public function summonPlayer(Player $player, string $name): void
+    /**
+     * @param Location $location
+     * @param Skin $skin
+     * @param string $name
+     * @param Player[] $players
+     */
+    public function summonPlayer(Location $location, Skin $skin, string $name, array $players): void
     {
-        $position = $player->getPosition();
+        $position = $location->asPosition();
         $uuid = Uuid::uuid4();
         $id = Entity::nextRuntimeId();
 
@@ -135,7 +145,6 @@ class Inanimate
         $entry->uuid = $uuid;
         $entry->actorUniqueId = $id;
         $sas = new SkinAdapterSingleton();
-        $skin = $player->getSkin();
         $entry->skinData = $sas->get()->toSkinData($skin);
         $entry->username = "";
         $entry->xboxUserId = "";
@@ -150,14 +159,10 @@ class Inanimate
         $addPlayerPacket->motion = new Vector3(0, 0, 0);
         $addPlayerPacket->item = ItemStackWrapper::legacy(TypeConverter::getInstance()->coreItemStackToNet(ItemFactory::air()));
         $addPlayerPacket->actorRuntimeId = $id;
-        $addPlayerPacket->actorUniqueId = $id;
         $addPlayerPacket->username = "";
-        $addPlayerPacket->yaw = $player->getLocation()->yaw;
-        $addPlayerPacket->pitch = $player->getLocation()->pitch;
-        $addPlayerPacket->headYaw = $player->getLocation()->yaw;
-        $adventurepk = new AdventureSettingsPacket();
-        $adventurepk->targetActorUniqueId = $id;
-        $addPlayerPacket->adventureSettingsPacket = $adventurepk;
+        $addPlayerPacket->yaw = $location->yaw;
+        $addPlayerPacket->pitch = $location->pitch;
+        $addPlayerPacket->headYaw = $location->yaw;
         $addPlayerPacket->position = $position;
         $addPlayerPacket->metadata = [
             EntityMetadataProperties::NAMETAG => new StringMetadataProperty($name),
@@ -165,17 +170,25 @@ class Inanimate
             EntityMetadataFlags::ALWAYS_SHOW_NAMETAG => new ByteMetadataProperty(1),
             EntityMetadataProperties::SCALE => new FloatMetadataProperty("1")
         ];
+        $updateAbPacket = UpdateAbilitiesPacket::create(CommandPermissions::NORMAL, PlayerPermissions::MEMBER, $id, []);
+        $addPlayerPacket->abilitiesPacket = $updateAbPacket;
 
         $playerListRemovePacket = new PlayerListPacket();
         $playerListRemovePacket->entries[] = $entry;
         $playerListRemovePacket->type = PlayerListPacket::TYPE_REMOVE;
 
-        $player->getServer()->broadcastPackets([$player], [$playerListAddPacket, $addPlayerPacket, $playerListRemovePacket]);
+        Server::getInstance()->broadcastPackets($players, [$playerListAddPacket, $addPlayerPacket, $playerListRemovePacket]);
     }
 
-    public function summonMob(Player $player, string $type, string $name): void
+    /**
+     * @param Location $location
+     * @param string $type
+     * @param string $name
+     * @param Player[] $players
+     */
+    public function summonMob(Location $location, string $type, string $name, array $players): void
     {
-        $position = $player->getPosition();
+        $position = $location->asPosition();
         $id = Entity::nextRuntimeId();
 
         $pk = new AddActorPacket();
@@ -183,21 +196,22 @@ class Inanimate
         $pk->actorUniqueId = $id;
         $pk->attributes = $this->getAttributes();
         $pk->type = self::type[$type];
-        $pk->pitch = $player->getLocation()->pitch;
-        $pk->yaw = $player->getLocation()->yaw;
-        $pk->headYaw = $player->getLocation()->yaw;
+        $pk->pitch = $location->pitch;
+        $pk->yaw = $location->yaw;
+        $pk->headYaw = $location->yaw;
         $pk->position = $position;
         $pk->metadata = [
             EntityMetadataProperties::NAMETAG => new StringMetadataProperty($name),
-            EntityMetadataProperties::FLAGS => new LongMetadataProperty( 1 << EntityMetadataFlags::IMMOBILE),
-            EntityMetadataProperties::ALWAYS_SHOW_NAMETAG =>new ByteMetadataProperty(1),
+            EntityMetadataProperties::FLAGS => new LongMetadataProperty(1 << EntityMetadataFlags::IMMOBILE),
+            EntityMetadataProperties::ALWAYS_SHOW_NAMETAG => new ByteMetadataProperty(1),
             EntityMetadataProperties::HEALTH => new IntMetadataProperty(3),
-            EntityMetadataProperties::SCALE => new FloatMetadataProperty( 1)];
-        $player->getNetworkSession()->sendDataPacket($pk);
+            EntityMetadataProperties::SCALE => new FloatMetadataProperty(1)];
+        Server::getInstance()->broadcastPackets($players, [$pk]);
     }
 
-    protected function getAttributes() : array{
-        return [ new \pocketmine\network\mcpe\protocol\types\entity\Attribute(Attribute::HEALTH, 0 ,3,3,3)];
+    protected function getAttributes(): array
+    {
+        return [new \pocketmine\network\mcpe\protocol\types\entity\Attribute(Attribute::HEALTH, 0, 3, 3, 3)];
     }
 
 }
