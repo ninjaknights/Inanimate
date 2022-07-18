@@ -13,6 +13,7 @@ use pocketmine\network\mcpe\convert\TypeConverter;
 use pocketmine\network\mcpe\protocol\AddActorPacket;
 use pocketmine\network\mcpe\protocol\AddPlayerPacket;
 use pocketmine\network\mcpe\protocol\PlayerListPacket;
+use pocketmine\network\mcpe\protocol\RemoveActorPacket;
 use pocketmine\network\mcpe\protocol\types\command\CommandPermissions;
 use pocketmine\network\mcpe\protocol\types\entity\ByteMetadataProperty;
 use pocketmine\network\mcpe\protocol\types\entity\EntityIds;
@@ -135,7 +136,7 @@ class Inanimate
      * @param string $name
      * @param Player[] $players
      */
-    public function summonPlayer(Location $location, Skin $skin, string $name, array $players): void
+    public function summonPlayer(Location $location, Skin $skin, string $name, array $players): int
     {
         $position = $location->asPosition();
         $uuid = Uuid::uuid4();
@@ -178,6 +179,8 @@ class Inanimate
         $playerListRemovePacket->type = PlayerListPacket::TYPE_REMOVE;
 
         Server::getInstance()->broadcastPackets($players, [$playerListAddPacket, $addPlayerPacket, $playerListRemovePacket]);
+
+        return $id;
     }
 
     /**
@@ -186,7 +189,7 @@ class Inanimate
      * @param string $name
      * @param Player[] $players
      */
-    public function summonMob(Location $location, string $type, string $name, array $players): void
+    public function summonMob(Location $location, string $type, string $name, array $players): int
     {
         $position = $location->asPosition();
         $id = Entity::nextRuntimeId();
@@ -206,6 +209,19 @@ class Inanimate
             EntityMetadataProperties::ALWAYS_SHOW_NAMETAG => new ByteMetadataProperty(1),
             EntityMetadataProperties::HEALTH => new IntMetadataProperty(3),
             EntityMetadataProperties::SCALE => new FloatMetadataProperty(1)];
+        Server::getInstance()->broadcastPackets($players, [$pk]);
+
+        return $id;
+    }
+
+    /**
+     * @param int $id
+     * @param Player[] $players
+     */
+    public function despawn(int $id, array $players)
+    {
+        $pk = new RemoveActorPacket();
+        $pk->actorUniqueId = $id;
         Server::getInstance()->broadcastPackets($players, [$pk]);
     }
 
